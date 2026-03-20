@@ -43,18 +43,17 @@ type AsyncJob struct {
 }
 
 // AsyncJobView is the JSON-serialisable snapshot returned to callers.
-// When Status == JobStatusCompleted, ResultContent contains the tool's output.
+// It represents the job state for pending, running, and failed jobs.
+// Completed jobs are returned as raw *mcp.CallToolResult via GetResult().
 type AsyncJobView struct {
-	ID            string        `json:"id"`
-	ToolID        string        `json:"tool_id"`
-	Status        JobStatus     `json:"status"`
-	Progress      float64       `json:"progress"`
-	Message       string        `json:"message,omitempty"`
-	Error         string        `json:"error,omitempty"`
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
-	ResultContent []interface{} `json:"result_content,omitempty"`
-	IsError       bool          `json:"is_error,omitempty"`
+	ID        string    `json:"id"`
+	ToolID    string    `json:"tool_id"`
+	Status    JobStatus `json:"status"`
+	Progress  float64   `json:"progress"`
+	Message   string    `json:"message,omitempty"`
+	Error     string    `json:"error,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // JobRegistry stores and manages all async jobs.
@@ -138,13 +137,6 @@ func (jr *JobRegistry) Get(id string) (*AsyncJobView, error) {
 		Error:     job.Error,
 		CreatedAt: job.CreatedAt,
 		UpdatedAt: job.UpdatedAt,
-	}
-
-	if job.Status == JobStatusCompleted && job.Result != nil {
-		view.ResultContent = job.Result.Content
-		if job.Result.IsError != nil {
-			view.IsError = *job.Result.IsError
-		}
 	}
 
 	return view, nil

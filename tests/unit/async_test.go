@@ -169,7 +169,7 @@ func TestJobRegistry_ConcurrentGetsAreSafe(t *testing.T) {
 
 // ---- Result content on completion ---------------------------------------
 
-func TestJobRegistry_CompletedJobHasResultContent(t *testing.T) {
+func TestJobRegistry_CompletedJobHasResult(t *testing.T) {
 	jr := server.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
@@ -180,8 +180,13 @@ func TestJobRegistry_CompletedJobHasResultContent(t *testing.T) {
 	for time.Now().Before(deadline) {
 		view, _ := jr.Get(jobID)
 		if view.Status == server.JobStatusCompleted {
-			if len(view.ResultContent) == 0 {
-				t.Error("expected ResultContent to be populated on completed job")
+			// Completed view no longer embeds result content; retrieve via GetResult.
+			result, err := jr.GetResult(jobID)
+			if err != nil {
+				t.Fatalf("GetResult error: %v", err)
+			}
+			if result == nil {
+				t.Error("expected non-nil result from GetResult on completed job")
 			}
 			return
 		}

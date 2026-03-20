@@ -10,10 +10,10 @@ import (
 // osExit is a variable that can be mocked in tests
 var osExit = os.Exit
 
-const helpText = `mcp-aura-infra-mgr - A Model Context Protocol Server for managing Neo4j Aura Infrastructure
+const helpText = `mcp-base A Model Context Protocol Server  
 
 Usage:
-  mcp-aura-api  [OPTIONS]
+  mcp-base  [OPTIONS]
 
 Options:
   -h, --help                          Show this help message
@@ -21,57 +21,40 @@ Options:
   
 
 Required Environment Variables:
-  CLIENT_ID       Client Id 
-  CLIENT_SECRET   Client Secret
   
 Optional Environment Variables:
-  URI                    URI to Aura API 
   READ_ONLY              Enable read-only mode (default: true)
   LOG_LEVEL              Log level to use (default: Info )
   LOG_FORMAT             Log format to use (defaut: Text )
-  INSTANCE_CONFIG_FILE   Full path to instance configuration file
+  
 
-Examples:
-  # Using environment variables
 
-  # Using CLI flags (takes precedence over environment variables)
-  mcp-aura-api --client-id <YOUR CLIENT ID> --client-secret <YOUR CLIENT SECRET>
 
-For more information, visit: https://github.com/neo4j/mcp
+
+# Using CLI flags (takes precedence over environment variables)
+ 
 `
 
 // Args holds configuration values parsed from command-line flags
 type Args struct {
-	URI          string
-	ClientId     string
-	ClientSecret string
-	ReadOnly     string
-	LogLevel     string
-	LogFormat    string
-	InstCfgFile  string
+	ReadOnly  string
+	LogLevel  string
+	LogFormat string
 }
 
 // ParseConfigFlags parses CLI flags and returns configuration values.
 // It should be called after HandleArgs to ensure help/version flags are processed first.
 func ParseConfigFlags() *Args {
-	URI := flag.String("uri", "", "Neo4j Aura API URI (overrides URI env var)")
 	ReadOnly := flag.String("read-only", "", "Enable read-only mode: true or false (overrides READ_ONLY env var)")
-	ClientId := flag.String("client-id", "", "Client Id for Aura API ")
-	ClientSecret := flag.String("client-secret", "", "Client Secret for Aura API ")
 	LogLevel := flag.String("log-level", "", "Log level to use ( overrides LOG_LEVEL )")
 	LogFormat := flag.String("log-format", "", "Log level to use ( overrides LOG_FORMAT )")
-	InstCfgFile := flag.String("instance-config-file", "", "Full path to instance configuration file ( overrides INSTANCE_CONFIG_FILE )")
 
 	flag.Parse()
 
 	return &Args{
-		URI:          *URI,
-		ReadOnly:     *ReadOnly,
-		ClientId:     *ClientId,
-		ClientSecret: *ClientSecret,
-		LogLevel:     *LogLevel,
-		LogFormat:    *LogFormat,
-		InstCfgFile:  *InstCfgFile,
+		ReadOnly:  *ReadOnly,
+		LogLevel:  *LogLevel,
+		LogFormat: *LogFormat,
 	}
 }
 
@@ -86,7 +69,7 @@ func HandleArgs(version string) {
 
 	flags := make(map[string]bool)
 	var err error
-	i := 1 // we start from 1 because os.Args[0] is the program name ("mcp-aura-api") - not a flag
+	i := 1 // we start from 1 because os.Args[0] is the program name  - not a flag
 
 	for i < len(os.Args) {
 		arg := os.Args[i]
@@ -98,7 +81,7 @@ func HandleArgs(version string) {
 			flags["version"] = true
 			i++
 		// Allow configuration flags to be parsed by the flag package
-		case "--uri", "--read-only", "--client-id", "--client-secret", "--log-level", "--log-format":
+		case "--read-only", "--log-level", "--log-format":
 			// Check if there's a value following the flag
 			if i+1 >= len(os.Args) {
 				err = fmt.Errorf("%s requires a value", arg)
@@ -138,7 +121,7 @@ func HandleArgs(version string) {
 	}
 
 	if flags["version"] {
-		fmt.Printf("neo4j-mcp version: %s\n", version)
+		fmt.Printf("mcp server version: %s\n", version)
 		osExit(0)
 	}
 }
