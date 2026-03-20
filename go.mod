@@ -3,7 +3,6 @@ module github.com/LackOfMorals/mcpBaseServer
 go 1.25.3
 
 require (
-	github.com/LackOfMorals/mcp4AuraAPI v0.0.0-20260130171807-17e27157fb79
 	github.com/mark3labs/mcp-go v0.45.0
 )
 
