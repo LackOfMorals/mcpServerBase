@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/mcpServerBase/internal/server"
+	"github.com/LackOfMorals/mcpServerBase/internal/tools"
 )
 
 // ---- list-tools handler -------------------------------------------------
 
 func TestListToolsHandler_EmptyRegistry(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.ListToolsHandler(deps)
+	handler := tools.ListToolsHandler(deps)
 
 	result, err := handler(context.Background(), makeCallRequest(nil))
 	if err != nil {
@@ -31,7 +31,7 @@ func TestListToolsHandler_PopulatedRegistry(t *testing.T) {
 	deps.Tools.Register(sampleTool("tool-a", true, echoHandler))
 	deps.Tools.Register(sampleTool("tool-b", false, echoHandler))
 
-	handler := server.ListToolsHandler(deps)
+	handler := tools.ListToolsHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(nil))
 
 	text := extractText(t, result)
@@ -49,7 +49,7 @@ func TestGetToolDetailsHandler_ValidID(t *testing.T) {
 	deps := newDeps(nil)
 	deps.Tools.Register(sampleTool("detail-target", true, echoHandler))
 
-	handler := server.GetToolDetailsHandler(deps)
+	handler := tools.GetToolDetailsHandler(deps)
 	result, err := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id": "detail-target",
 	}))
@@ -68,7 +68,7 @@ func TestGetToolDetailsHandler_ValidID(t *testing.T) {
 
 func TestGetToolDetailsHandler_UnknownID(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.GetToolDetailsHandler(deps)
+	handler := tools.GetToolDetailsHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id": "ghost",
 	}))
@@ -77,14 +77,14 @@ func TestGetToolDetailsHandler_UnknownID(t *testing.T) {
 
 func TestGetToolDetailsHandler_MissingParam(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.GetToolDetailsHandler(deps)
+	handler := tools.GetToolDetailsHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{}))
 	assertMCPError(t, result, "missing tool_id")
 }
 
 func TestGetToolDetailsHandler_BadArgFormat(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.GetToolDetailsHandler(deps)
+	handler := tools.GetToolDetailsHandler(deps)
 	req := makeCallRequest(nil)
 	req.Params.Arguments = "not-a-map"
 	result, _ := handler(context.Background(), req)
@@ -97,7 +97,7 @@ func TestExecuteToolHandler_Sync_Success(t *testing.T) {
 	deps := newDeps(nil)
 	deps.Tools.Register(sampleTool("sync-tool", true, echoHandler))
 
-	handler := server.ExecuteToolHandler(deps)
+	handler := tools.ExecuteToolHandler(deps)
 	result, err := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id":    "sync-tool",
 		"parameters": map[string]interface{}{"q": "hello"},
@@ -115,7 +115,7 @@ func TestExecuteToolHandler_Sync_Success(t *testing.T) {
 
 func TestExecuteToolHandler_Sync_UnknownTool(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.ExecuteToolHandler(deps)
+	handler := tools.ExecuteToolHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id": "not-registered",
 	}))
@@ -125,17 +125,17 @@ func TestExecuteToolHandler_Sync_UnknownTool(t *testing.T) {
 func TestExecuteToolHandler_Sync_BadParameters(t *testing.T) {
 	deps := newDeps(nil)
 	deps.Tools.Register(sampleTool("p-tool", true, echoHandler))
-	handler := server.ExecuteToolHandler(deps)
+	handler := tools.ExecuteToolHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id":    "p-tool",
-		"parameters": "not-an-object", // wrong type
+		"parameters": "not-an-object",
 	}))
 	assertMCPError(t, result, "bad parameters type")
 }
 
 func TestExecuteToolHandler_Sync_MissingToolID(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.ExecuteToolHandler(deps)
+	handler := tools.ExecuteToolHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{}))
 	assertMCPError(t, result, "missing tool_id")
 }
@@ -146,7 +146,7 @@ func TestExecuteToolHandler_Async_ReturnsJobID(t *testing.T) {
 	deps := newDeps(nil)
 	deps.Tools.Register(sampleTool("async-tool", true, echoHandler))
 
-	handler := server.ExecuteToolHandler(deps)
+	handler := tools.ExecuteToolHandler(deps)
 	result, err := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id": "async-tool",
 		"async":   true,
@@ -163,8 +163,8 @@ func TestExecuteToolHandler_Async_ReturnsJobID(t *testing.T) {
 	if resp["job_id"] == "" {
 		t.Error("expected non-empty job_id in async response")
 	}
-	if resp["status"] != string(server.JobStatusPending) {
-		t.Errorf("expected status=%q, got %q", server.JobStatusPending, resp["status"])
+	if resp["status"] != string(tools.JobStatusPending) {
+		t.Errorf("expected status=%q, got %q", tools.JobStatusPending, resp["status"])
 	}
 }
 
@@ -172,12 +172,11 @@ func TestExecuteToolHandler_Async_FalseIsSync(t *testing.T) {
 	deps := newDeps(nil)
 	deps.Tools.Register(sampleTool("sync-default", true, echoHandler))
 
-	handler := server.ExecuteToolHandler(deps)
+	handler := tools.ExecuteToolHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id": "sync-default",
 		"async":   false,
 	}))
-	// Should return echo output, not a job_id JSON object.
 	text := extractText(t, result)
 	if strings.Contains(text, "job_id") {
 		t.Errorf("async=false should not return a job_id, got: %s", text)
@@ -188,7 +187,7 @@ func TestExecuteToolHandler_Async_FalseIsSync(t *testing.T) {
 
 func TestGetToolStatusHandler_UnknownJobID(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.GetToolStatusHandler(deps)
+	handler := tools.GetToolStatusHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{
 		"job_id": "no-such-job",
 	}))
@@ -197,7 +196,7 @@ func TestGetToolStatusHandler_UnknownJobID(t *testing.T) {
 
 func TestGetToolStatusHandler_MissingJobID(t *testing.T) {
 	deps := newDeps(nil)
-	handler := server.GetToolStatusHandler(deps)
+	handler := tools.GetToolStatusHandler(deps)
 	result, _ := handler(context.Background(), makeCallRequest(map[string]interface{}{}))
 	assertMCPError(t, result, "missing job_id")
 }
@@ -206,8 +205,7 @@ func TestGetToolStatusHandler_EventualCompletion(t *testing.T) {
 	deps := newDeps(nil)
 	deps.Tools.Register(sampleTool("poll-tool", true, echoHandler))
 
-	// Submit the job via the execute handler with async=true.
-	execHandler := server.ExecuteToolHandler(deps)
+	execHandler := tools.ExecuteToolHandler(deps)
 	execResult, _ := execHandler(context.Background(), makeCallRequest(map[string]interface{}{
 		"tool_id": "poll-tool",
 		"async":   true,
@@ -216,23 +214,19 @@ func TestGetToolStatusHandler_EventualCompletion(t *testing.T) {
 	json.Unmarshal([]byte(extractText(t, execResult)), &jobResp) //nolint:errcheck
 	jobID := jobResp["job_id"]
 
-	// Poll via the status handler until we get the real tool result back.
-	statusHandler := server.GetToolStatusHandler(deps)
+	statusHandler := tools.GetToolStatusHandler(deps)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		statusResult, _ := statusHandler(context.Background(), makeCallRequest(map[string]interface{}{
 			"job_id": jobID,
 		}))
-		// GetToolStatusHandler returns the raw result when completed, so
-		// the text will contain "echo:" (the echoHandler output prefix).
 		text := extractText(t, statusResult)
 		if strings.Contains(text, "echo:") {
-			return // success — got the real result back
+			return
 		}
-		// Still pending/running — parse status field.
 		var view map[string]interface{}
 		if jsonErr := json.Unmarshal([]byte(text), &view); jsonErr == nil {
-			if view["status"] == string(server.JobStatusCompleted) {
+			if view["status"] == string(tools.JobStatusCompleted) {
 				return
 			}
 		}
@@ -243,8 +237,6 @@ func TestGetToolStatusHandler_EventualCompletion(t *testing.T) {
 
 // ---- helpers ------------------------------------------------------------
 
-// extractText marshals result to JSON and pulls the first text content block.
-// Accepts interface{} so it works with *mcp.CallToolResult and any test double.
 func extractText(t *testing.T, result interface{}) string {
 	t.Helper()
 	data, err := json.Marshal(result)
@@ -267,8 +259,6 @@ func extractText(t *testing.T, result interface{}) string {
 	return ""
 }
 
-// assertMCPError asserts the result carries isError=true.
-// The label is used only in the failure message to identify which assertion failed.
 func assertMCPError(t *testing.T, result interface{}, label string) {
 	t.Helper()
 	data, _ := json.Marshal(result)

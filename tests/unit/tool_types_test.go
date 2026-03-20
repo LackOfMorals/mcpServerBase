@@ -4,21 +4,21 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/LackOfMorals/mcpServerBase/internal/server"
+	"github.com/LackOfMorals/mcpServerBase/internal/tools"
 )
 
 // ---- ToolDef JSON serialisation -----------------------------------------
 
 func TestToolDef_Serialisation_HandlerExcluded(t *testing.T) {
-	td := &server.ToolDef{
+	td := &tools.ToolDef{
 		ID:       "ser-test",
 		Name:     "Serialisation Test",
-		Type:     server.ToolTypeCreate,
+		Type:     tools.ToolTypeCreate,
 		ReadOnly: false,
-		Parameters: []server.ToolParam{
+		Parameters: []tools.ToolParam{
 			{Name: "input", Type: "string", Required: true},
 		},
-		Handler: echoHandler, // must NOT appear in JSON
+		Handler: echoHandler,
 	}
 
 	data, err := json.Marshal(td)
@@ -40,10 +40,10 @@ func TestToolDef_Serialisation_HandlerExcluded(t *testing.T) {
 }
 
 func TestToolDef_Serialisation_ParametersIncluded(t *testing.T) {
-	td := &server.ToolDef{
+	td := &tools.ToolDef{
 		ID:   "with-params",
-		Type: server.ToolTypeRead,
-		Parameters: []server.ToolParam{
+		Type: tools.ToolTypeRead,
+		Parameters: []tools.ToolParam{
 			{Name: "limit", Type: "integer", Required: false, Default: 10},
 		},
 	}
@@ -63,7 +63,7 @@ func TestToolDef_Serialisation_ParametersIncluded(t *testing.T) {
 }
 
 func TestToolDef_Serialisation_NoParametersOmitted(t *testing.T) {
-	td := &server.ToolDef{ID: "no-params", Type: server.ToolTypeRead}
+	td := &tools.ToolDef{ID: "no-params", Type: tools.ToolTypeRead}
 	data, _ := json.Marshal(td)
 
 	var m map[string]interface{}
@@ -76,10 +76,10 @@ func TestToolDef_Serialisation_NoParametersOmitted(t *testing.T) {
 // ---- ToolSummary --------------------------------------------------------
 
 func TestToolSummary_AllFieldsPresent(t *testing.T) {
-	s := server.ToolSummary{
+	s := tools.ToolSummary{
 		ID:       "summ-1",
 		Name:     "Summary One",
-		Type:     server.ToolTypeDelete,
+		Type:     tools.ToolTypeDelete,
 		ReadOnly: false,
 	}
 	data, _ := json.Marshal(s)
@@ -97,14 +97,14 @@ func TestToolSummary_AllFieldsPresent(t *testing.T) {
 
 func TestToolType_Values(t *testing.T) {
 	cases := []struct {
-		tt   server.ToolType
+		tt   tools.ToolType
 		want string
 	}{
-		{server.ToolTypeList, "list"},
-		{server.ToolTypeRead, "read"},
-		{server.ToolTypeCreate, "create"},
-		{server.ToolTypeUpdate, "update"},
-		{server.ToolTypeDelete, "delete"},
+		{tools.ToolTypeList, "list"},
+		{tools.ToolTypeRead, "read"},
+		{tools.ToolTypeCreate, "create"},
+		{tools.ToolTypeUpdate, "update"},
+		{tools.ToolTypeDelete, "delete"},
 	}
 	for _, tc := range cases {
 		if string(tc.tt) != tc.want {
@@ -117,13 +117,13 @@ func TestToolType_Values(t *testing.T) {
 
 func TestJobStatus_Values(t *testing.T) {
 	cases := []struct {
-		js   server.JobStatus
+		js   tools.JobStatus
 		want string
 	}{
-		{server.JobStatusPending, "pending"},
-		{server.JobStatusRunning, "running"},
-		{server.JobStatusCompleted, "completed"},
-		{server.JobStatusFailed, "failed"},
+		{tools.JobStatusPending, "pending"},
+		{tools.JobStatusRunning, "running"},
+		{tools.JobStatusCompleted, "completed"},
+		{tools.JobStatusFailed, "failed"},
 	}
 	for _, tc := range cases {
 		if string(tc.js) != tc.want {
@@ -132,10 +132,10 @@ func TestJobStatus_Values(t *testing.T) {
 	}
 }
 
-// ---- ToolParam default field omitted when zero -------------------------
+// ---- ToolParam default field omitted when zero --------------------------
 
 func TestToolParam_DefaultOmittedWhenNil(t *testing.T) {
-	p := server.ToolParam{Name: "x", Type: "string", Required: true}
+	p := tools.ToolParam{Name: "x", Type: "string", Required: true}
 	data, _ := json.Marshal(p)
 	var m map[string]interface{}
 	json.Unmarshal(data, &m) //nolint:errcheck
@@ -145,7 +145,7 @@ func TestToolParam_DefaultOmittedWhenNil(t *testing.T) {
 }
 
 func TestToolParam_DefaultIncludedWhenSet(t *testing.T) {
-	p := server.ToolParam{Name: "limit", Type: "integer", Default: float64(25)}
+	p := tools.ToolParam{Name: "limit", Type: "integer", Default: float64(25)}
 	data, _ := json.Marshal(p)
 	var m map[string]interface{}
 	json.Unmarshal(data, &m) //nolint:errcheck

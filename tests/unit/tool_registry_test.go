@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/LackOfMorals/mcpServerBase/internal/config"
-	"github.com/LackOfMorals/mcpServerBase/internal/server"
+	"github.com/LackOfMorals/mcpServerBase/internal/tools"
 )
 
 // ---- Register -----------------------------------------------------------
 
 func TestToolRegistry_Register_Success(t *testing.T) {
-	r := server.NewToolRegistry()
+	r := tools.NewToolRegistry()
 	r.Register(sampleTool("t1", true, echoHandler))
 
 	summaries := r.GetAllSummaries()
@@ -29,7 +29,7 @@ func TestToolRegistry_Register_DuplicatePanics(t *testing.T) {
 			t.Error("expected panic on duplicate registration, got none")
 		}
 	}()
-	r := server.NewToolRegistry()
+	r := tools.NewToolRegistry()
 	r.Register(sampleTool("dup", true, echoHandler))
 	r.Register(sampleTool("dup", true, echoHandler)) // must panic
 }
@@ -37,14 +37,14 @@ func TestToolRegistry_Register_DuplicatePanics(t *testing.T) {
 // ---- GetAllSummaries ----------------------------------------------------
 
 func TestToolRegistry_GetAllSummaries_Empty(t *testing.T) {
-	r := server.NewToolRegistry()
+	r := tools.NewToolRegistry()
 	if s := r.GetAllSummaries(); len(s) != 0 {
 		t.Errorf("expected empty slice, got %d items", len(s))
 	}
 }
 
 func TestToolRegistry_GetAllSummaries_MultipleTools(t *testing.T) {
-	r := server.NewToolRegistry()
+	r := tools.NewToolRegistry()
 	r.Register(sampleTool("a", true, echoHandler))
 	r.Register(sampleTool("b", false, echoHandler))
 	r.Register(sampleTool("c", true, echoHandler))
@@ -56,7 +56,7 @@ func TestToolRegistry_GetAllSummaries_MultipleTools(t *testing.T) {
 }
 
 func TestToolRegistry_GetAllSummaries_ReadOnlyField(t *testing.T) {
-	r := server.NewToolRegistry()
+	r := tools.NewToolRegistry()
 	r.Register(sampleTool("rw", false, echoHandler))
 
 	s := r.GetAllSummaries()[0]
@@ -68,7 +68,7 @@ func TestToolRegistry_GetAllSummaries_ReadOnlyField(t *testing.T) {
 // ---- GetTool ------------------------------------------------------------
 
 func TestToolRegistry_GetTool_Found(t *testing.T) {
-	r := server.NewToolRegistry()
+	r := tools.NewToolRegistry()
 	r.Register(sampleTool("find-me", true, echoHandler))
 
 	tool, err := r.GetTool("find-me")
@@ -81,7 +81,7 @@ func TestToolRegistry_GetTool_Found(t *testing.T) {
 }
 
 func TestToolRegistry_GetTool_NotFound(t *testing.T) {
-	r := server.NewToolRegistry()
+	r := tools.NewToolRegistry()
 	_, err := r.GetTool("ghost")
 	if err == nil {
 		t.Fatal("expected an error for unknown tool, got nil")
@@ -120,7 +120,7 @@ func TestToolRegistry_ExecuteTool_UnknownTool(t *testing.T) {
 func TestToolRegistry_ExecuteTool_ReadOnlyBlock(t *testing.T) {
 	cfg := &config.Config{ReadOnly: true}
 	deps := newDeps(cfg)
-	deps.Tools.Register(sampleTool("write-op", false, echoHandler)) // ReadOnly=false tool
+	deps.Tools.Register(sampleTool("write-op", false, echoHandler))
 
 	result, err := deps.Tools.ExecuteTool(context.Background(), "write-op", nil, deps)
 	if err != nil {
@@ -134,7 +134,7 @@ func TestToolRegistry_ExecuteTool_ReadOnlyBlock(t *testing.T) {
 func TestToolRegistry_ExecuteTool_ReadOnlyToolAllowed(t *testing.T) {
 	cfg := &config.Config{ReadOnly: true}
 	deps := newDeps(cfg)
-	deps.Tools.Register(sampleTool("read-op", true, echoHandler)) // ReadOnly=true tool
+	deps.Tools.Register(sampleTool("read-op", true, echoHandler))
 
 	result, err := deps.Tools.ExecuteTool(context.Background(), "read-op", nil, deps)
 	if err != nil {
@@ -147,7 +147,7 @@ func TestToolRegistry_ExecuteTool_ReadOnlyToolAllowed(t *testing.T) {
 
 func TestToolRegistry_ExecuteTool_NilHandler(t *testing.T) {
 	deps := newDeps(nil)
-	deps.Tools.Register(&server.ToolDef{ID: "null-handler", ReadOnly: true, Handler: nil})
+	deps.Tools.Register(&tools.ToolDef{ID: "null-handler", ReadOnly: true, Handler: nil})
 
 	result, err := deps.Tools.ExecuteTool(context.Background(), "null-handler", nil, deps)
 	if err != nil {

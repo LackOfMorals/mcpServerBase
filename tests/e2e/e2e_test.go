@@ -1,12 +1,13 @@
 // Package e2e exercises the full MCP server stack in-process.
 //
-// Tests wire up a real Neo4jMCPServer (with tool registry + job registry),
-// register one or more ToolDefs, then call every meta-tool over the MCP
-// JSON-RPC layer using a test transport provided by mcp-go.
+// Tests wire up a real MCPServer (with tool registry + job registry),
+// register sample ToolDefs, then call every meta-tool through the actual
+// handler layer so the full tools package is exercised end-to-end.
 //
 // Run with:
 //
 //	go test ./tests/e2e/ -v
+//	go test -race ./tests/e2e/ -v
 package e2e
 
 import (
@@ -18,95 +19,91 @@ import (
 	"time"
 
 	"github.com/LackOfMorals/mcpServerBase/internal/config"
-	"github.com/LackOfMorals/mcpServerBase/internal/server"
+	"github.com/LackOfMorals/mcpServerBase/internal/tools"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
-	mcpserver "github.com/mark3labs/mcp-go/server"
+	mcpgoserver "github.com/mark3labs/mcp-go/server"
 )
 
 // ---- test fixtures -------------------------------------------------------
 
-// buildTestServer returns a fully initialised mcpserver.MCPServer (the inner
-// mcp-go server) with all four meta-tools registered and one sample tool in
-// the registry.  We bypass Neo4jMCPServer.Start() (which calls ServeStdio)
-// and instead wire everything up manually so tests can call handlers in-process.
-func buildTestServer(t *testing.T, readOnly bool) (*mcpserver.MCPServer, *server.Dependencies) {
+// buildTestServer returns a wired *tools.Dependencies and the underlying
+// *mcpgoserver.MCPServer with all four meta-tools already registered.
+// We bypass Neo4jMCPServer.Start() (which calls ServeStdio) and instead
+// wire everything manually so handlers can be called in-process.
+func buildTestServer(t *testing.T, readOnly bool) (*mcpgoserver.MCPServer, *tools.Dependencies) {
 	t.Helper()
-	cfg := &config.Config{ReadOnly: readOnly}
 
-	inner := mcpserver.NewMCPServer(
+	inner := mcpgoserver.NewMCPServer(
 		"test-mcp-server",
 		"0.0.0-test",
-		mcpserver.WithToolCapabilities(true),
+		mcpgoserver.WithToolCapabilities(true),
 	)
 
-	deps := &server.Dependencies{
-		Config: cfg,
-		Tools:  server.NewToolRegistry(),
-		Jobs:   server.NewJobRegistry(),
+	deps := &tools.Dependencies{
+		Config: &config.Config{ReadOnly: readOnly},
+		Tools:  tools.NewToolRegistry(),
+		Jobs:   tools.NewJobRegistry(),
 		Server: inner,
 	}
 
-	// Register a sample read tool.
-	deps.Tools.Register(&server.ToolDef{
+	// A simple read tool.
+	deps.Tools.Register(&tools.ToolDef{
 		ID:       "greet",
 		Name:     "Greet",
-		Type:     server.ToolTypeRead,
+		Type:     tools.ToolTypeRead,
 		ReadOnly: true,
-		Parameters: []server.ToolParam{
+		Parameters: []tools.ToolParam{
 			{Name: "name", Type: "string", Required: true, Description: "who to greet"},
 		},
-		Handler: func(_ context.Context, params map[string]interface{}, _ *server.Dependencies) (*mcpgo.CallToolResult, error) {
+		Handler: func(_ context.Context, params map[string]interface{}, _ *tools.Dependencies) (*mcpgo.CallToolResult, error) {
 			name, _ := params["name"].(string)
 			return mcpgo.NewToolResultText(fmt.Sprintf("Hello, %s!", name)), nil
 		},
 	})
 
-	// Register a write tool (blocked in read-only mode).
-	deps.Tools.Register(&server.ToolDef{
+	// A write tool — blocked when the server is read-only.
+	deps.Tools.Register(&tools.ToolDef{
 		ID:       "mutate",
 		Name:     "Mutate",
-		Type:     server.ToolTypeCreate,
+		Type:     tools.ToolTypeCreate,
 		ReadOnly: false,
-		Handler: func(_ context.Context, _ map[string]interface{}, _ *server.Dependencies) (*mcpgo.CallToolResult, error) {
+		Handler: func(_ context.Context, _ map[string]interface{}, _ *tools.Dependencies) (*mcpgo.CallToolResult, error) {
 			return mcpgo.NewToolResultText("mutation done"), nil
 		},
 	})
 
-	// Register a slow tool for async testing.
-	deps.Tools.Register(&server.ToolDef{
+	// A slow tool for async testing.
+	deps.Tools.Register(&tools.ToolDef{
 		ID:       "slow-greet",
 		Name:     "Slow Greet",
-		Type:     server.ToolTypeRead,
+		Type:     tools.ToolTypeRead,
 		ReadOnly: true,
-		Handler: func(_ context.Context, params map[string]interface{}, _ *server.Dependencies) (*mcpgo.CallToolResult, error) {
+		Handler: func(_ context.Context, _ map[string]interface{}, _ *tools.Dependencies) (*mcpgo.CallToolResult, error) {
 			time.Sleep(100 * time.Millisecond)
 			return mcpgo.NewToolResultText("slow hello"), nil
 		},
 	})
 
-	// Add the four meta-tools.
-	inner.AddTools(server.GetAllMetaTools(deps)...)
+	inner.AddTools(tools.GetAllMetaTools(deps)...)
 
 	return inner, deps
 }
 
-// callTool invokes a meta-tool by name with the given arguments and returns
-// the first text content block.
-func callTool(t *testing.T, deps *server.Dependencies, toolName string, args map[string]interface{}) string {
+// callTool invokes a meta-tool handler by name and returns the first text
+// content block from the result.
+func callTool(t *testing.T, deps *tools.Dependencies, toolName string, args map[string]interface{}) string {
 	t.Helper()
-	ctx := context.Background()
 
 	var handler func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error)
-
 	switch toolName {
 	case "list-tools":
-		handler = server.ListToolsHandler(deps)
+		handler = tools.ListToolsHandler(deps)
 	case "get-tool-details":
-		handler = server.GetToolDetailsHandler(deps)
+		handler = tools.GetToolDetailsHandler(deps)
 	case "execute-tool":
-		handler = server.ExecuteToolHandler(deps)
+		handler = tools.ExecuteToolHandler(deps)
 	case "get-tool-status":
-		handler = server.GetToolStatusHandler(deps)
+		handler = tools.GetToolStatusHandler(deps)
 	default:
 		t.Fatalf("unknown meta-tool: %s", toolName)
 	}
@@ -114,14 +111,14 @@ func callTool(t *testing.T, deps *server.Dependencies, toolName string, args map
 	req := mcpgo.CallToolRequest{}
 	req.Params.Arguments = args
 
-	result, err := handler(ctx, req)
+	result, err := handler(context.Background(), req)
 	if err != nil {
 		t.Fatalf("[%s] unexpected Go error: %v", toolName, err)
 	}
 	return extractText(t, result)
 }
 
-// ---- list-tools e2e ------------------------------------------------------
+// ---- list-tools ----------------------------------------------------------
 
 func TestE2E_ListTools_ReturnsAllRegistered(t *testing.T) {
 	_, deps := buildTestServer(t, false)
@@ -134,20 +131,20 @@ func TestE2E_ListTools_ReturnsAllRegistered(t *testing.T) {
 	}
 }
 
-func TestE2E_ListTools_IsJSON(t *testing.T) {
+func TestE2E_ListTools_IsJSONArray(t *testing.T) {
 	_, deps := buildTestServer(t, false)
 	text := callTool(t, deps, "list-tools", nil)
 
 	var arr []interface{}
 	if err := json.Unmarshal([]byte(text), &arr); err != nil {
-		t.Errorf("list-tools output is not valid JSON array: %v\nbody: %s", err, text)
+		t.Errorf("list-tools output is not a valid JSON array: %v\nbody: %s", err, text)
 	}
 	if len(arr) != 3 {
 		t.Errorf("expected 3 tools, got %d", len(arr))
 	}
 }
 
-// ---- get-tool-details e2e ------------------------------------------------
+// ---- get-tool-details ---------------------------------------------------
 
 func TestE2E_GetToolDetails_KnownTool(t *testing.T) {
 	_, deps := buildTestServer(t, false)
@@ -164,15 +161,10 @@ func TestE2E_GetToolDetails_KnownTool(t *testing.T) {
 
 func TestE2E_GetToolDetails_UnknownTool(t *testing.T) {
 	_, deps := buildTestServer(t, false)
-	text := callTool(t, deps, "get-tool-details", map[string]interface{}{
-		"tool_id": "nonexistent",
-	})
-	if !isErrorResult(t, deps, "get-tool-details", "tool_id", "nonexistent") {
-		_ = text // already failed inside isErrorResult
-	}
+	assertCallIsError(t, deps, "get-tool-details", map[string]interface{}{"tool_id": "nonexistent"})
 }
 
-// ---- execute-tool synchronous e2e ----------------------------------------
+// ---- execute-tool synchronous -------------------------------------------
 
 func TestE2E_ExecuteTool_Sync_ReadTool(t *testing.T) {
 	_, deps := buildTestServer(t, false)
@@ -185,7 +177,7 @@ func TestE2E_ExecuteTool_Sync_ReadTool(t *testing.T) {
 	}
 }
 
-func TestE2E_ExecuteTool_Sync_WriteTool_NotReadOnly(t *testing.T) {
+func TestE2E_ExecuteTool_Sync_WriteTool_Allowed(t *testing.T) {
 	_, deps := buildTestServer(t, false) // read-only=false
 	text := callTool(t, deps, "execute-tool", map[string]interface{}{
 		"tool_id": "mutate",
@@ -195,32 +187,19 @@ func TestE2E_ExecuteTool_Sync_WriteTool_NotReadOnly(t *testing.T) {
 	}
 }
 
-func TestE2E_ExecuteTool_Sync_WriteTool_ReadOnlyServer(t *testing.T) {
+func TestE2E_ExecuteTool_Sync_WriteTool_BlockedOnReadOnlyServer(t *testing.T) {
 	_, deps := buildTestServer(t, true) // read-only=true
-
-	req := mcpgo.CallToolRequest{}
-	req.Params.Arguments = map[string]interface{}{"tool_id": "mutate"}
-
-	result, _ := server.ExecuteToolHandler(deps)(context.Background(), req)
-
-	data, _ := json.Marshal(result)
-	var m map[string]interface{}
-	json.Unmarshal(data, &m) //nolint:errcheck
-
-	if isErr, _ := m["isError"].(bool); !isErr {
-		t.Errorf("expected isError=true for write tool on read-only server, got: %s", data)
-	}
+	assertCallIsError(t, deps, "execute-tool", map[string]interface{}{"tool_id": "mutate"})
 }
 
-// ---- execute-tool async e2e ----------------------------------------------
+// ---- execute-tool asynchronous ------------------------------------------
 
 func TestE2E_ExecuteTool_Async_FastTool(t *testing.T) {
 	_, deps := buildTestServer(t, false)
 
-	// Submit async.
 	submitText := callTool(t, deps, "execute-tool", map[string]interface{}{
-		"tool_id": "greet",
-		"async":   true,
+		"tool_id":    "greet",
+		"async":      true,
 		"parameters": map[string]interface{}{"name": "Async"},
 	})
 
@@ -232,25 +211,23 @@ func TestE2E_ExecuteTool_Async_FastTool(t *testing.T) {
 	if jobID == "" {
 		t.Fatal("expected non-empty job_id")
 	}
-	if jobResp["status"] != string(server.JobStatusPending) {
+	if jobResp["status"] != string(tools.JobStatusPending) {
 		t.Errorf("expected status=pending, got %q", jobResp["status"])
 	}
 
-	// Poll until done.
+	// Poll until the raw result comes back.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		statusText := callTool(t, deps, "get-tool-status", map[string]interface{}{"job_id": jobID})
-		// Completed → handler returns raw result with "Hello, Async!" text.
 		if strings.Contains(statusText, "Hello, Async!") {
 			return
 		}
-		// Still in-flight: parse status.
 		var view map[string]interface{}
 		if err := json.Unmarshal([]byte(statusText), &view); err == nil {
 			switch view["status"] {
-			case string(server.JobStatusCompleted):
+			case string(tools.JobStatusCompleted):
 				return
-			case string(server.JobStatusFailed):
+			case string(tools.JobStatusFailed):
 				t.Fatalf("job failed unexpectedly: %s", statusText)
 			}
 		}
@@ -271,17 +248,14 @@ func TestE2E_ExecuteTool_Async_SlowTool(t *testing.T) {
 	json.Unmarshal([]byte(submitText), &jobResp) //nolint:errcheck
 	jobID := jobResp["job_id"]
 
-	// First poll should be pending or running (not yet completed because the
-	// handler sleeps 100ms).
+	// First poll is very likely to be pending/running because the handler sleeps 100ms.
 	firstStatus := callTool(t, deps, "get-tool-status", map[string]interface{}{"job_id": jobID})
 	var firstView map[string]interface{}
 	json.Unmarshal([]byte(firstStatus), &firstView) //nolint:errcheck
-	if firstView["status"] == string(server.JobStatusCompleted) {
-		// Acceptable on very fast machines — just warn.
+	if firstView["status"] == string(tools.JobStatusCompleted) {
 		t.Log("warning: slow-greet completed before first poll (very fast machine?)")
 	}
 
-	// Eventually it must complete.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		text := callTool(t, deps, "get-tool-status", map[string]interface{}{"job_id": jobID})
@@ -289,7 +263,7 @@ func TestE2E_ExecuteTool_Async_SlowTool(t *testing.T) {
 			return
 		}
 		var v map[string]interface{}
-		if json.Unmarshal([]byte(text), &v) == nil && v["status"] == string(server.JobStatusCompleted) {
+		if json.Unmarshal([]byte(text), &v) == nil && v["status"] == string(tools.JobStatusCompleted) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -297,22 +271,14 @@ func TestE2E_ExecuteTool_Async_SlowTool(t *testing.T) {
 	t.Fatal("slow-greet did not complete within 5s")
 }
 
+// ---- get-tool-status edge cases -----------------------------------------
+
 func TestE2E_GetToolStatus_UnknownJobID(t *testing.T) {
 	_, deps := buildTestServer(t, false)
-
-	req := mcpgo.CallToolRequest{}
-	req.Params.Arguments = map[string]interface{}{"job_id": "does-not-exist"}
-	result, _ := server.GetToolStatusHandler(deps)(context.Background(), req)
-
-	data, _ := json.Marshal(result)
-	var m map[string]interface{}
-	json.Unmarshal(data, &m) //nolint:errcheck
-	if isErr, _ := m["isError"].(bool); !isErr {
-		t.Errorf("expected isError=true for unknown job_id, got: %s", data)
-	}
+	assertCallIsError(t, deps, "get-tool-status", map[string]interface{}{"job_id": "does-not-exist"})
 }
 
-// ---- multiple concurrent async jobs -------------------------------------
+// ---- concurrency --------------------------------------------------------
 
 func TestE2E_Async_MultipleConcurrentJobs(t *testing.T) {
 	_, deps := buildTestServer(t, false)
@@ -333,13 +299,12 @@ func TestE2E_Async_MultipleConcurrentJobs(t *testing.T) {
 		jobIDs[i] = resp["job_id"]
 	}
 
-	// All jobs must eventually complete.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		allDone := true
 		for _, id := range jobIDs {
 			view, err := deps.Jobs.Get(id)
-			if err != nil || (view.Status != server.JobStatusCompleted && view.Status != server.JobStatusFailed) {
+			if err != nil || (view.Status != tools.JobStatusCompleted && view.Status != tools.JobStatusFailed) {
 				allDone = false
 				break
 			}
@@ -354,6 +319,7 @@ func TestE2E_Async_MultipleConcurrentJobs(t *testing.T) {
 
 // ---- helpers ------------------------------------------------------------
 
+// extractText marshals result to JSON and pulls the first text content block.
 func extractText(t *testing.T, result interface{}) string {
 	t.Helper()
 	data, err := json.Marshal(result)
@@ -376,31 +342,33 @@ func extractText(t *testing.T, result interface{}) string {
 	return ""
 }
 
-// isErrorResult calls the named meta-tool with a single string arg and
-// asserts the response has isError=true.  Returns false and calls t.Errorf
-// on failure, allowing the caller to skip further assertions.
-func isErrorResult(t *testing.T, deps *server.Dependencies, toolName, argKey, argVal string) bool {
+// assertCallIsError invokes a meta-tool handler directly and asserts
+// the response carries isError=true.
+func assertCallIsError(t *testing.T, deps *tools.Dependencies, toolName string, args map[string]interface{}) {
 	t.Helper()
+
 	req := mcpgo.CallToolRequest{}
-	req.Params.Arguments = map[string]interface{}{argKey: argVal}
+	req.Params.Arguments = args
 
 	var result *mcpgo.CallToolResult
 	switch toolName {
+	case "list-tools":
+		result, _ = tools.ListToolsHandler(deps)(context.Background(), req)
 	case "get-tool-details":
-		result, _ = server.GetToolDetailsHandler(deps)(context.Background(), req)
+		result, _ = tools.GetToolDetailsHandler(deps)(context.Background(), req)
 	case "execute-tool":
-		result, _ = server.ExecuteToolHandler(deps)(context.Background(), req)
+		result, _ = tools.ExecuteToolHandler(deps)(context.Background(), req)
+	case "get-tool-status":
+		result, _ = tools.GetToolStatusHandler(deps)(context.Background(), req)
 	default:
-		t.Fatalf("isErrorResult: unsupported tool %q", toolName)
+		t.Fatalf("assertCallIsError: unsupported tool %q", toolName)
 	}
 
 	data, _ := json.Marshal(result)
 	var m map[string]interface{}
 	json.Unmarshal(data, &m) //nolint:errcheck
 
-	isErr, _ := m["isError"].(bool)
-	if !isErr {
+	if isErr, _ := m["isError"].(bool); !isErr {
 		t.Errorf("[%s] expected isError=true, got: %s", toolName, data)
 	}
-	return isErr
 }

@@ -6,48 +6,43 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LackOfMorals/mcpServerBase/internal/server"
+	"github.com/LackOfMorals/mcpServerBase/internal/tools"
 )
 
 // ---- Submit / Get lifecycle ----------------------------------------------
 
 func TestJobRegistry_PendingImmediately(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
-	deps.Tools.Register(sampleTool("slow", true, slowHandler))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	jobID := jr.Submit(ctx, "slow", slowHandler, nil, deps)
 
-	// Allow a tiny window for the goroutine to start, but the job should be
-	// registered before the goroutine transitions to running.
+	// The job ID must exist immediately regardless of goroutine scheduling.
 	view, err := jr.Get(jobID)
 	if err != nil {
 		t.Fatalf("job not found: %v", err)
 	}
-	// Status will be pending or running depending on goroutine scheduling;
-	// what matters is that the job ID exists immediately.
 	_ = view
 }
 
 func TestJobRegistry_CompletedAfterHandler(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
 
 	jobID := jr.Submit(context.Background(), "echo", echoHandler, map[string]interface{}{"q": "hi"}, deps)
 
-	// Poll for completion with a generous timeout.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		view, err := jr.Get(jobID)
 		if err != nil {
 			t.Fatalf("job not found: %v", err)
 		}
-		if view.Status == server.JobStatusCompleted {
+		if view.Status == tools.JobStatusCompleted {
 			if view.Progress != 1.0 {
 				t.Errorf("expected progress=1.0 on completion, got %v", view.Progress)
 			}
@@ -59,7 +54,7 @@ func TestJobRegistry_CompletedAfterHandler(t *testing.T) {
 }
 
 func TestJobRegistry_FailedWhenHandlerErrors(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
 
@@ -68,7 +63,7 @@ func TestJobRegistry_FailedWhenHandlerErrors(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		view, _ := jr.Get(jobID)
-		if view.Status == server.JobStatusFailed {
+		if view.Status == tools.JobStatusFailed {
 			if view.Error == "" {
 				t.Error("expected non-empty error string on failed job")
 			}
@@ -80,21 +75,20 @@ func TestJobRegistry_FailedWhenHandlerErrors(t *testing.T) {
 }
 
 func TestJobRegistry_ContextCancelledFailsJob(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
 
 	ctx, cancel := context.WithCancel(context.Background())
 	jobID := jr.Submit(ctx, "slow", slowHandler, nil, deps)
 
-	// Let the goroutine reach the blocking receive, then cancel.
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		view, _ := jr.Get(jobID)
-		if view.Status == server.JobStatusFailed {
+		if view.Status == tools.JobStatusFailed {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -103,7 +97,7 @@ func TestJobRegistry_ContextCancelledFailsJob(t *testing.T) {
 }
 
 func TestJobRegistry_GetUnknownJobErrors(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	_, err := jr.Get("does-not-exist")
 	if err == nil {
 		t.Error("expected error for unknown job ID")
@@ -111,7 +105,7 @@ func TestJobRegistry_GetUnknownJobErrors(t *testing.T) {
 }
 
 func TestJobRegistry_Len(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
 
@@ -129,7 +123,7 @@ func TestJobRegistry_Len(t *testing.T) {
 // ---- Concurrent safety --------------------------------------------------
 
 func TestJobRegistry_ConcurrentSubmitsAreSafe(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
 
@@ -150,7 +144,7 @@ func TestJobRegistry_ConcurrentSubmitsAreSafe(t *testing.T) {
 }
 
 func TestJobRegistry_ConcurrentGetsAreSafe(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
 
@@ -167,10 +161,10 @@ func TestJobRegistry_ConcurrentGetsAreSafe(t *testing.T) {
 	wg.Wait()
 }
 
-// ---- Result content on completion ---------------------------------------
+// ---- GetResult on completion --------------------------------------------
 
 func TestJobRegistry_CompletedJobHasResult(t *testing.T) {
-	jr := server.NewJobRegistry()
+	jr := tools.NewJobRegistry()
 	deps := newDeps(nil)
 	deps.Jobs = jr
 
@@ -179,8 +173,7 @@ func TestJobRegistry_CompletedJobHasResult(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		view, _ := jr.Get(jobID)
-		if view.Status == server.JobStatusCompleted {
-			// Completed view no longer embeds result content; retrieve via GetResult.
+		if view.Status == tools.JobStatusCompleted {
 			result, err := jr.GetResult(jobID)
 			if err != nil {
 				t.Fatalf("GetResult error: %v", err)

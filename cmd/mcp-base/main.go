@@ -9,6 +9,7 @@ import (
 	"github.com/LackOfMorals/mcpServerBase/internal/config"
 	"github.com/LackOfMorals/mcpServerBase/internal/logger"
 	"github.com/LackOfMorals/mcpServerBase/internal/server"
+	"github.com/LackOfMorals/mcpServerBase/internal/tools"
 )
 
 // go build -C cmd/mcp-base -o ../../bin/ -ldflags "-X 'main.Version=9999'"
@@ -35,20 +36,20 @@ func main() {
 	// Initialise global logger
 	logger.Init(cfg.LogLevel, cfg.LogFormat, os.Stderr)
 
-	// Create and configure the MCP server
+	// Create the MCP server
 	mcpServer := server.NewNeo4jMCPServer(Version, cfg)
 
 	// Register project-specific tools here before calling Start.
 	// Example:
 	//
-	//   mcpServer.RegisterTool(&server.ToolDef{
+	//   mcpServer.RegisterTool(&tools.ToolDef{
 	//       ID:       "my-tool",
 	//       Name:     "My Tool",
-	//       Type:     server.ToolTypeRead,
+	//       Type:     tools.ToolTypeRead,
 	//       ReadOnly: true,
 	//       Handler:  myToolHandler,
 	//   })
-	_ = mcpServer // suppress unused warning until tools are registered
+	_ = tools.ToolTypeRead // ensure tools import is not flagged unused until real tools are registered
 
 	// Gracefully handle shutdown
 	defer func() {
