@@ -1,13 +1,11 @@
-// This package implements a three-tool pattern for MCP operations:
+// tool_handlers.go
 //
-//  1. **list-outcome** - Lists all available operations
-//  2. **get-outcome-details** - Gets detailed information about a specific operation
-//  3. **execute-outcome** - Executes the operation
+// MCP tool handlers for the four meta-tools:
 //
-//  An outcome provides the desired end state using any supplied parameter. Outcome is used to
-//  differentiate between MCP Tool ( as there are only three MCP tools as described above ).
-//
-// tools_handlers.go holds the MCP Tool handlers for the three-tool pattern
+//   ListToolsHandler       – list-tools
+//   GetToolDetailsHandler  – get-tool-details
+//   ExecuteToolHandler     – execute-tool (sync + async)
+//   GetToolStatusHandler   – get-tool-status
 
 package server
 
@@ -19,82 +17,136 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// ListOutcomesHandler returns a handler function for listing all available Outcomes
-func ListOutcomesHandler(deps *Dependencies) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		summaries := deps.OutComes.GetAllSummaries()
-
-		jsonData, err := json.MarshalIndent(summaries, "", "  ")
+// ListToolsHandler returns all registered tool summaries as JSON.
+func ListToolsHandler(deps *Dependencies) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		summaries := deps.Tools.GetAllSummaries()
+		data, err := json.MarshalIndent(summaries, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to serialize Outcomes: %v", err)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("failed to serialise tool list: %v", err)), nil
 		}
-
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 
-// GetOutcomeDetailsHandler returns a handler function for getting Outcome details
-func GetOutcomeDetailsHandler(deps *Dependencies) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Type assert Arguments to map[string]interface{}
-		arguments, ok := request.Params.Arguments.(map[string]interface{})
+// GetToolDetailsHandler returns the full ToolDef (including parameters) for a
+// given tool_id.
+func GetToolDetailsHandler(deps *Dependencies) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args, ok := req.Params.Arguments.(map[string]interface{})
 		if !ok {
 			return mcp.NewToolResultError("invalid arguments format"), nil
 		}
 
-		// Extract Outcome_id from request
-		OutcomeID, ok := arguments["Outcome_id"].(string)
-		if !ok || OutcomeID == "" {
-			return mcp.NewToolResultError("Outcome_id parameter is required and must be a string"), nil
+		toolID, ok := args["tool_id"].(string)
+		if !ok || toolID == "" {
+			return mcp.NewToolResultError("tool_id parameter is required and must be a string"), nil
 		}
 
-		// Get the Outcome details
-		Outcome, err := deps.OutComes.GetOutcome(OutcomeID)
+		tool, err := deps.Tools.GetTool(toolID)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		jsonData, err := json.MarshalIndent(Outcome, "", "  ")
+		data, err := json.MarshalIndent(tool, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to serialize Outcome details: %v", err)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("failed to serialise tool details: %v", err)), nil
 		}
 
-		return mcp.NewToolResultText(string(jsonData)), nil
+		return mcp.NewToolResultText(string(data)), nil
 	}
 }
 
-// ExecuteOutcomeHandler returns a handler function for executing an Outcome.
-// For outcomes that support progress notifications (provision-environment),
-// a progressSender is built from the request's progressToken and passed directly
-// to the implementation — bypassing the registry's generic dispatch so the raw
-// request is accessible here where the token can be extracted.
-func ExecuteOutcomeHandler(deps *Dependencies) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Type assert Arguments to map[string]interface{}
-		arguments, ok := request.Params.Arguments.(map[string]interface{})
+// ExecuteToolHandler runs a registered tool, either synchronously (default) or
+// asynchronously when async=true is present in the arguments.
+//
+// Synchronous:  blocks and returns the tool result directly.
+// Asynchronous: submits the job, returns {"job_id":"…","status":"pending"}.
+func ExecuteToolHandler(deps *Dependencies) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args, ok := req.Params.Arguments.(map[string]interface{})
 		if !ok {
 			return mcp.NewToolResultError("invalid arguments format"), nil
 		}
 
-		// Extract Outcome_id from request
-		OutcomeID, ok := arguments["Outcome_id"].(string)
-		if !ok || OutcomeID == "" {
-			return mcp.NewToolResultError("Outcome_id parameter is required and must be a string"), nil
+		toolID, ok := args["tool_id"].(string)
+		if !ok || toolID == "" {
+			return mcp.NewToolResultError("tool_id parameter is required and must be a string"), nil
 		}
 
-		// Extract parameters (optional, defaults to empty map)
-		var parameters map[string]interface{}
-		if paramsVal, exists := arguments["parameters"]; exists {
+		// Extract optional parameters map.
+		parameters := make(map[string]interface{})
+		if paramsVal, exists := args["parameters"]; exists {
 			if params, ok := paramsVal.(map[string]interface{}); ok {
 				parameters = params
 			} else {
-				return mcp.NewToolResultError("parameters must be an object/map"), nil
+				return mcp.NewToolResultError("parameters must be an object"), nil
 			}
-		} else {
-			parameters = make(map[string]interface{})
 		}
 
-		// All outcomes go through the standard registry dispatch.
-		return deps.OutComes.ExecuteOutcome(ctx, OutcomeID, parameters, deps)
+		// Determine execution mode.
+		asyncMode := false
+		if asyncVal, exists := args["async"]; exists {
+			if b, ok := asyncVal.(bool); ok {
+				asyncMode = b
+			}
+		}
+
+		if asyncMode {
+			jobID, err := deps.Tools.AsyncExecuteTool(ctx, toolID, parameters, deps)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			data, _ := json.Marshal(map[string]string{
+				"job_id": jobID,
+				"status": string(JobStatusPending),
+			})
+			return mcp.NewToolResultText(string(data)), nil
+		}
+
+		// Synchronous path.
+		return deps.Tools.ExecuteTool(ctx, toolID, parameters, deps)
+	}
+}
+
+// GetToolStatusHandler polls the JobRegistry for the current state of an async
+// job. When the job has completed it returns the raw tool result inline so the
+// caller receives identical content to a synchronous execution.
+func GetToolStatusHandler(deps *Dependencies) func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args, ok := req.Params.Arguments.(map[string]interface{})
+		if !ok {
+			return mcp.NewToolResultError("invalid arguments format"), nil
+		}
+
+		jobID, ok := args["job_id"].(string)
+		if !ok || jobID == "" {
+			return mcp.NewToolResultError("job_id parameter is required and must be a string"), nil
+		}
+
+		view, err := deps.Jobs.Get(jobID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		// When the job has completed, return the raw *mcp.CallToolResult so the
+		// LLM receives exactly the same payload it would get from a synchronous call.
+		// GetResult acquires its own read-lock; no unexported fields are touched here.
+		if view.Status == JobStatusCompleted {
+			result, err := deps.Jobs.GetResult(jobID)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			if result != nil {
+				return result, nil
+			}
+		}
+
+		// Job is still pending/running (or completed with no result) — return the status view.
+		data, err := json.MarshalIndent(view, "", "  ")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to serialise job status: %v", err)), nil
+		}
+		return mcp.NewToolResultText(string(data)), nil
 	}
 }

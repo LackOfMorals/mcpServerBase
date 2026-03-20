@@ -1,8 +1,9 @@
-module github.com/LackOfMorals/mcpBaseServer
+module github.com/LackOfMorals/mcpServerBase
 
 go 1.25.3
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.45.0
 )
 
@@ -10,7 +11,6 @@ require (
 	github.com/LackOfMorals/aura-client v1.6.3 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect

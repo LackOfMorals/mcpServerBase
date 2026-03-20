@@ -11,7 +11,7 @@ import (
 	"github.com/LackOfMorals/mcpServerBase/internal/server"
 )
 
-// go build -C cmd/neo4j-mcp -o ../../bin/ -ldflags "-X 'main.Version=9999'"
+// go build -C cmd/mcp-base -o ../../bin/ -ldflags "-X 'main.Version=9999'"
 var Version = "development"
 
 func main() {
@@ -23,23 +23,32 @@ func main() {
 
 	// Load and validate configuration (env vars + CLI overrides)
 	cfg, err := config.LoadConfig(&config.CLIOverrides{
-		URI:         cliArgs.URI,
-		ReadOnly:    cliArgs.ReadOnly,
-		LogLevel:    cliArgs.LogLevel,
-		LogFormat:   cliArgs.LogFormat,
-		InstCfgFile: cliArgs.InstCfgFile,
+		ReadOnly:  cliArgs.ReadOnly,
+		LogLevel:  cliArgs.LogLevel,
+		LogFormat: cliArgs.LogFormat,
 	})
 	if err != nil {
-		// Can't use logger here yet, so just print to stderr
 		fmt.Fprintln(os.Stderr, "Failed to load configuration: "+err.Error())
 		os.Exit(1)
 	}
 
-	// Initialize global logger
+	// Initialise global logger
 	logger.Init(cfg.LogLevel, cfg.LogFormat, os.Stderr)
 
 	// Create and configure the MCP server
 	mcpServer := server.NewNeo4jMCPServer(Version, cfg)
+
+	// Register project-specific tools here before calling Start.
+	// Example:
+	//
+	//   mcpServer.RegisterTool(&server.ToolDef{
+	//       ID:       "my-tool",
+	//       Name:     "My Tool",
+	//       Type:     server.ToolTypeRead,
+	//       ReadOnly: true,
+	//       Handler:  myToolHandler,
+	//   })
+	_ = mcpServer // suppress unused warning until tools are registered
 
 	// Gracefully handle shutdown
 	defer func() {
@@ -48,10 +57,9 @@ func main() {
 		}
 	}()
 
-	// Start the server (this blocks until the server is stopped)
+	// Start the server (blocks until the server is stopped)
 	if err := mcpServer.Start(); err != nil {
 		slog.Error("Server error", "error", err)
 		return // so that defer can run
 	}
-
 }
