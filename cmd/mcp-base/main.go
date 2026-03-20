@@ -16,28 +16,34 @@ import (
 var Version = "development"
 
 func main() {
-	// Handle CLI arguments (version, help, etc.)
+	// Handle -h/--help and -v/--version before anything else.
 	cli.HandleArgs(Version)
 
-	// Parse CLI flags for configuration
+	// Parse all configuration flags.
 	cliArgs := cli.ParseConfigFlags()
 
-	// Load and validate configuration (env vars + CLI overrides)
+	// Load and validate configuration (env vars + CLI overrides).
 	cfg, err := config.LoadConfig(&config.CLIOverrides{
-		ReadOnly:  cliArgs.ReadOnly,
-		LogLevel:  cliArgs.LogLevel,
-		LogFormat: cliArgs.LogFormat,
+		ReadOnly:    cliArgs.ReadOnly,
+		LogLevel:    cliArgs.LogLevel,
+		LogFormat:   cliArgs.LogFormat,
+		Transport:   cliArgs.Transport,
+		HTTPAddr:    cliArgs.HTTPAddr,
+		TLSEnabled:  cliArgs.TLSEnabled,
+		TLSCertFile: cliArgs.TLSCertFile,
+		TLSKeyFile:  cliArgs.TLSKeyFile,
+		APIKey:      cliArgs.APIKey,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to load configuration: "+err.Error())
 		os.Exit(1)
 	}
 
-	// Initialise global logger
+	// Initialise global logger.
 	logger.Init(cfg.LogLevel, cfg.LogFormat, os.Stderr)
 
-	// Create the MCP server
-	mcpServer := server.NewNeo4jMCPServer(Version, cfg)
+	// Create the MCP server.
+	mcpServer := server.New(Version, cfg)
 
 	// Register project-specific tools here before calling Start.
 	// Example:
@@ -49,18 +55,17 @@ func main() {
 	//       ReadOnly: true,
 	//       Handler:  myToolHandler,
 	//   })
-	_ = tools.ToolTypeRead // ensure tools import is not flagged unused until real tools are registered
+	_ = tools.ToolTypeRead // satisfies the import until real tools are registered
 
-	// Gracefully handle shutdown
+	// Graceful shutdown on Stop.
 	defer func() {
 		if err := mcpServer.Stop(); err != nil {
 			slog.Error("Error stopping server", "error", err)
 		}
 	}()
 
-	// Start the server (blocks until the server is stopped)
+	// Start blocks until the transport exits.
 	if err := mcpServer.Start(); err != nil {
 		slog.Error("Server error", "error", err)
-		return // so that defer can run
 	}
 }
