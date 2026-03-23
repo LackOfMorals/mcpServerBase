@@ -105,7 +105,7 @@ func TestExecuteToolHandler_Sync_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.IsError != nil && *result.IsError {
+	if result.IsError {
 		t.Errorf("expected success result")
 	}
 	if !strings.Contains(extractText(t, result), "echo") {

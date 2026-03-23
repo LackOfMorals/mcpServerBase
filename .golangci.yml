@@ -1,0 +1,30 @@
+version: "2"
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - example/
+
+linters:
+  enable:
+    - bodyclose
+    - gocritic
+    - gosec
+    - makezero
+    - misspell
+    - nakedret
+    - revive
+    - errcheck
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - -QF1008
+        - -ST1000

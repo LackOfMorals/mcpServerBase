@@ -16,13 +16,10 @@ import (
 var Version = "development"
 
 func main() {
-	// Handle -h/--help and -v/--version before anything else.
 	cli.HandleArgs(Version)
 
-	// Parse all configuration flags.
 	cliArgs := cli.ParseConfigFlags()
 
-	// Load and validate configuration (env vars + CLI overrides).
 	cfg, err := config.LoadConfig(&config.CLIOverrides{
 		ReadOnly:    cliArgs.ReadOnly,
 		LogLevel:    cliArgs.LogLevel,
@@ -35,37 +32,25 @@ func main() {
 		APIKey:      cliArgs.APIKey,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to load configuration: "+err.Error())
+		fmt.Fprintln(os.Stderr, "configuration error: "+err.Error())
 		os.Exit(1)
 	}
 
-	// Initialise global logger.
 	logger.Init(cfg.LogLevel, cfg.LogFormat, os.Stderr)
 
-	// Create the MCP server.
 	mcpServer := server.New(Version, cfg)
+	// Register all of the tools that are described in /internnal/tools/catalog.go.
+	// catalog.go has instructions on how to do that
 
-	// Register project-specific tools here before calling Start.
-	// Example:
-	//
-	//   mcpServer.RegisterTool(&tools.ToolDef{
-	//       ID:       "my-tool",
-	//       Name:     "My Tool",
-	//       Type:     tools.ToolTypeRead,
-	//       ReadOnly: true,
-	//       Handler:  myToolHandler,
-	//   })
-	_ = tools.ToolTypeRead // satisfies the import until real tools are registered
+	tools.RegisterAll(mcpServer)
 
-	// Graceful shutdown on Stop.
 	defer func() {
 		if err := mcpServer.Stop(); err != nil {
-			slog.Error("Error stopping server", "error", err)
+			slog.Error("error stopping server", "error", err)
 		}
 	}()
 
-	// Start blocks until the transport exits.
 	if err := mcpServer.Start(); err != nil {
-		slog.Error("Server error", "error", err)
+		slog.Error("server error", "error", err)
 	}
 }

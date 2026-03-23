@@ -101,7 +101,7 @@ func TestToolRegistry_ExecuteTool_Sync_Success(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
-	if result.IsError != nil && *result.IsError {
+	if result.IsError {
 		t.Errorf("expected success result, got error result")
 	}
 }
@@ -112,7 +112,7 @@ func TestToolRegistry_ExecuteTool_UnknownTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected Go error (should be MCP error result): %v", err)
 	}
-	if result.IsError == nil || !*result.IsError {
+	if !result.IsError {
 		t.Error("expected MCP error result for unknown tool")
 	}
 }
@@ -126,7 +126,7 @@ func TestToolRegistry_ExecuteTool_ReadOnlyBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected Go error: %v", err)
 	}
-	if result.IsError == nil || !*result.IsError {
+	if !result.IsError {
 		t.Error("expected MCP error result when server is read-only")
 	}
 }
@@ -140,7 +140,7 @@ func TestToolRegistry_ExecuteTool_ReadOnlyToolAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected Go error: %v", err)
 	}
-	if result.IsError != nil && *result.IsError {
+	if result.IsError {
 		t.Error("read-only tool should succeed even when server is in read-only mode")
 	}
 }
@@ -153,7 +153,7 @@ func TestToolRegistry_ExecuteTool_NilHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected Go error: %v", err)
 	}
-	if result.IsError == nil || !*result.IsError {
+	if !result.IsError {
 		t.Error("expected MCP error result for nil handler")
 	}
 }
