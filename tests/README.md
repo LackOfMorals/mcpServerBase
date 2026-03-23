@@ -102,18 +102,3 @@ is wired and every meta-tool exercised through the handler layer.
 | `TestE2E_Async_MultipleConcurrentJobs` | 10 concurrent async jobs all complete |
 
 ---
-
-## Adding new tools
-
-Register a `*tools.ToolDef` in `cmd/mcp-base/main.go` via `mcpServer.RegisterTool(...)` before calling `Start()`. The four meta-tools and both transport modes are automatically available with no additional changes.
-
-## Transport configuration quick reference
-
-| Setting | CLI flag | Env var | Default |
-|---|---|---|---|
-| Transport mode | `--transport` | `TRANSPORT` | `stdio` |
-| HTTP listen address | `--http-addr` | `HTTP_ADDR` | `127.0.0.1:6666` |
-| Enable TLS | `--tls` | `TLS` | `false` |
-| TLS certificate | `--tls-cert` | `TLS_CERT_FILE` | — |
-| TLS private key | `--tls-key` | `TLS_KEY_FILE` | — |
-| API key | `--api-key` | `API_KEY` | — |
